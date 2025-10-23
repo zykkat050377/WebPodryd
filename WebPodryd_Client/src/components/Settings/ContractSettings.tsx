@@ -44,6 +44,7 @@ const ContractSettings = () => {
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     contractTypeId: 0,
+    type: '' as 'operation' | 'norm-hour' | 'cost',
     workServices: [] as string[]
   });
 
@@ -59,37 +60,55 @@ const ContractSettings = () => {
       id: 1,
       name: 'ДП-выкладчик',
       contractTypeId: 1,
+      type: 'operation',
       workServices: ['Выкладка товара по планограмме', 'Мерчандайзинг продукции', 'Расстановка ценников', 'Контроль сроков годности', 'Поддержание чистоты на полках'],
-      operationsPer8Hours: 0,
       createdAt: '2024-01-15',
       updatedAt: '2024-01-15'
     },
     {
       id: 2,
-      name: 'ДП-комплектовщик',
+      name: 'ДП-выкладчик расширенный',
       contractTypeId: 1,
-      workServices: ['Комплектация заказов по накладным', 'Упаковка товара', 'Проверка качества продукции', 'Маркировка готовых заказов', 'Погрузка товара в транспорт'],
-      operationsPer8Hours: 0,
+      type: 'operation',
+      workServices: ['Выкладка товара по планограмме', 'Мерчандайзинг продукции', 'Расстановка ценников', 'Контроль сроков годности', 'Поддержание чистоты на полках', 'Учет остатков товара'],
       createdAt: '2024-01-16',
       updatedAt: '2024-01-16'
     },
     {
       id: 3,
-      name: 'ДП-контролер-кассир',
-      contractTypeId: 2,
-      workServices: ['Контроль кассовых операций', 'Проверка чеков и документов', 'Инвентаризация товаров', 'Обучение новых кассиров', 'Составление отчетности по кассам'],
-      operationsPer8Hours: 8,
+      name: 'ДП-комплектовщик',
+      contractTypeId: 1,
+      type: 'operation',
+      workServices: ['Комплектация заказов по накладным', 'Упаковка товара', 'Проверка качества продукции', 'Маркировка готовых заказов', 'Погрузка товара в транспорт'],
       createdAt: '2024-01-17',
       updatedAt: '2024-01-17'
     },
     {
       id: 4,
-      name: 'ДП-уборщик',
-      contractTypeId: 3,
-      workServices: ['Ежедневная уборка помещений', 'Санобработка поверхностей', 'Вынос мусора и утилизация', 'Мытье окон и витрин', 'Уход за прилегающей территорией'],
-      operationsPer8Hours: 0,
+      name: 'ДП-контролер-кассир',
+      contractTypeId: 2,
+      type: 'norm-hour',
+      workServices: ['Контроль кассовых операций', 'Проверка чеков и документов', 'Инвентаризация товаров', 'Обучение новых кассиров', 'Составление отчетности по кассам'],
       createdAt: '2024-01-18',
       updatedAt: '2024-01-18'
+    },
+    {
+      id: 5,
+      name: 'ДП-уборщик',
+      contractTypeId: 3,
+      type: 'cost',
+      workServices: ['Ежедневная уборка помещений', 'Санобработка поверхностей', 'Вынос мусора и утилизация', 'Мытье окон и витрин', 'Уход за прилегающей территорией'],
+      createdAt: '2024-01-19',
+      updatedAt: '2024-01-19'
+    },
+    {
+      id: 6,
+      name: 'ДП-уборщик производственных помещений',
+      contractTypeId: 3,
+      type: 'cost',
+      workServices: ['Ежедневная уборка производственных помещений', 'Санобработка оборудования', 'Вынос промышленных отходов', 'Мытье полов и стен', 'Уборка складских территорий'],
+      createdAt: '2024-01-20',
+      updatedAt: '2024-01-20'
     }
   ];
 
@@ -141,12 +160,10 @@ const ContractSettings = () => {
         return;
       }
 
-      // Реальный API вызов
+      // Реальный API вызов - получаем шаблоны по ID типа договора
       const currentType = templateTypes[activeTab];
       if (currentType) {
-        const templates = await ContractTemplateService.getContractTemplates({
-          contractTypeId: currentType.value
-        });
+        const templates = await ContractTemplateService.getTemplatesByContractType(currentType.value);
         setContractTemplates(templates);
       }
 
@@ -178,9 +195,12 @@ const ContractSettings = () => {
 
   const handleOpenAddModal = () => {
     const currentType = templateTypes[activeTab];
+    const selectedContractType = contractTypes.find(ct => ct.id === currentType?.value);
+
     setNewTemplate({
       name: '',
-      contractTypeId: currentType?.value || 0,
+      contractTypeId: currentType?.value || contractTypes[0]?.id || 0,
+      type: (selectedContractType?.code as 'operation' | 'norm-hour' | 'cost') || 'operation',
       workServices: ['']
     });
     setOpenAddModal(true);
@@ -190,13 +210,18 @@ const ContractSettings = () => {
     setOpenAddModal(false);
     setNewTemplate({
       name: '',
-      contractTypeId: 0,
+      contractTypeId: contractTypes[0]?.id || 0,
+      type: 'operation',
       workServices: []
     });
   };
 
   const handleOpenEditModal = (template: ContractTemplate) => {
-    setSelectedTemplate({ ...template });
+    setSelectedTemplate({
+      ...template,
+      // Убедимся, что contractTypeId корректный
+      contractTypeId: template.contractTypeId || contractTypes[0]?.id || 1
+    });
     setOpenEditModal(true);
   };
 
@@ -209,12 +234,31 @@ const ContractSettings = () => {
     try {
       setError(null);
 
+      // Валидация
+      if (!newTemplate.name.trim()) {
+        setError('Введите название шаблона');
+        return;
+      }
+
+      const validWorkServices = newTemplate.workServices.filter(service => service.trim() !== '');
+      if (validWorkServices.length === 0) {
+        setError('Добавьте хотя бы одну работу/услугу');
+        return;
+      }
+
+      if (!newTemplate.contractTypeId || newTemplate.contractTypeId === 0) {
+        setError('Выберите тип договора');
+        return;
+      }
+
       const templateData = {
-        name: newTemplate.name,
+        name: newTemplate.name.trim(),
+        type: newTemplate.type,
         contractTypeId: newTemplate.contractTypeId,
-        workServices: newTemplate.workServices.filter(service => service.trim() !== ''),
-        operationsPer8Hours: 0
+        workServices: validWorkServices
       };
+
+      console.log('Отправка данных шаблона:', templateData);
 
       // Реальный API вызов
       const newTemplateData = await ContractTemplateService.createContractTemplate(templateData);
@@ -222,11 +266,12 @@ const ContractSettings = () => {
       setContractTemplates(prev => [...prev, newTemplateData]);
       setSuccess('Шаблон договора успешно добавлен');
       handleCloseAddModal();
+      fetchTemplates(); // Перезагружаем данные
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Ошибка добавления:', err);
-      setError(err.response?.data?.message || 'Ошибка при добавлении шаблона договора');
+      setError(err.response?.data?.message || err.message || 'Ошибка при добавлении шаблона договора');
     }
   };
 
@@ -236,29 +281,44 @@ const ContractSettings = () => {
     try {
       setError(null);
 
-      // Реальный API вызов
-      await ContractTemplateService.updateContractTemplate(selectedTemplate.id, {
-        name: selectedTemplate.name,
-        contractTypeId: selectedTemplate.contractTypeId,
-        workServices: selectedTemplate.workServices.filter(service => service.trim() !== ''),
-        operationsPer8Hours: selectedTemplate.operationsPer8Hours
-      });
+      // Валидация
+      if (!selectedTemplate.name.trim()) {
+        setError('Введите название шаблона');
+        return;
+      }
 
-      setContractTemplates(prev =>
-        prev.map(template =>
-          template.id === selectedTemplate.id
-            ? { ...selectedTemplate, updatedAt: new Date().toISOString() }
-            : template
-        )
-      );
+      const validWorkServices = selectedTemplate.workServices.filter(service => service.trim() !== '');
+      if (validWorkServices.length === 0) {
+        setError('Добавьте хотя бы одну работу/услугу');
+        return;
+      }
+
+      if (!selectedTemplate.contractTypeId || selectedTemplate.contractTypeId === 0) {
+        setError('Выберите тип договора');
+        return;
+      }
+
+      const updateData = {
+        name: selectedTemplate.name.trim(),
+        type: selectedTemplate.type,
+        contractTypeId: selectedTemplate.contractTypeId,
+        workServices: validWorkServices
+      };
+
+      console.log('Отправка данных для обновления:', updateData);
+
+      // Реальный API вызов
+      await ContractTemplateService.updateContractTemplate(selectedTemplate.id, updateData);
 
       setSuccess('Шаблон договора успешно обновлен');
       handleCloseEditModal();
+      fetchTemplates(); // Перезагружаем данные
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Ошибка обновления:', err);
-      setError(err.response?.data?.message || 'Ошибка при обновлении шаблона договора');
+      console.error('Детали ошибки:', err.response?.data);
+      setError(err.response?.data?.message || err.message || 'Ошибка при обновлении шаблона договора');
     }
   };
 
@@ -273,8 +333,8 @@ const ContractSettings = () => {
       // Реальный API вызов
       await ContractTemplateService.deleteContractTemplate(id);
 
-      setContractTemplates(prev => prev.filter(template => template.id !== id));
       setSuccess('Шаблон договора успешно удален');
+      fetchTemplates(); // Перезагружаем данные
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -316,6 +376,25 @@ const ContractSettings = () => {
     } else if (selectedTemplate) {
       const newWorkServices = selectedTemplate.workServices.filter((_, i) => i !== index);
       setSelectedTemplate(prev => prev ? { ...prev, workServices: newWorkServices } : null);
+    }
+  };
+
+  const handleContractTypeChange = (contractTypeId: number, isNew: boolean = false) => {
+    const contractType = contractTypes.find(ct => ct.id === contractTypeId);
+    if (contractType) {
+      if (isNew) {
+        setNewTemplate(prev => ({
+          ...prev,
+          contractTypeId,
+          type: contractType.code as 'operation' | 'norm-hour' | 'cost'
+        }));
+      } else if (selectedTemplate) {
+        setSelectedTemplate(prev => prev ? {
+          ...prev,
+          contractTypeId,
+          type: contractType.code as 'operation' | 'norm-hour' | 'cost'
+        } : null);
+      }
     }
   };
 
@@ -472,7 +551,6 @@ const ContractSettings = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Тип договора</TableCell>
                 <TableCell>Название договора</TableCell>
                 <TableCell>Работы/услуги</TableCell>
                 <TableCell align="right">Действия</TableCell>
@@ -481,7 +559,7 @@ const ContractSettings = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} align="center">
+                  <TableCell colSpan={3} align="center">
                     Загрузка...
                   </TableCell>
                 </TableRow>
@@ -489,19 +567,12 @@ const ContractSettings = () => {
                 templatesToShow.map((template) => (
                   <TableRow key={template.id} hover>
                     <TableCell>
-                      <Chip
-                        label={getTypeLabel(template.contractTypeId)}
-                        color={getTypeColor(template.contractTypeId) as any}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
                       <Typography variant="subtitle2" fontWeight="bold">
                         {template.name}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Box sx={{ maxWidth: 300 }}>
+                      <Box sx={{ maxWidth: 400 }}>
                         {template.workServices.slice(0, 3).map((service, index) => (
                           <Typography key={index} variant="body2">
                             • {service}
@@ -530,7 +601,7 @@ const ContractSettings = () => {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} align="center">
+                  <TableCell colSpan={3} align="center">
                     {contractTemplates.length === 0 ? 'Нет данных о шаблонах' : 'Ничего не найдено'}
                   </TableCell>
                 </TableRow>
@@ -572,23 +643,19 @@ const ContractSettings = () => {
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <FormControl fullWidth>
+              <FormControl fullWidth required>
                 <InputLabel>Тип договора</InputLabel>
                 <Select
                   label="Тип договора"
-                  value={newTemplate.contractTypeId}
+                  value={newTemplate.contractTypeId || contractTypes[0]?.id || ''}
                   onChange={(e) => {
                     const contractTypeId = parseInt(e.target.value as string);
-                    setNewTemplate(prev => ({
-                      ...prev,
-                      contractTypeId,
-                      workServices: ['']
-                    }));
+                    handleContractTypeChange(contractTypeId, true);
                   }}
                 >
                   {contractTypes.map((type) => (
                     <MenuItem key={type.id} value={type.id}>
-                      {type.name}
+                      {type.name} ({type.code})
                     </MenuItem>
                   ))}
                 </Select>
@@ -602,6 +669,7 @@ const ContractSettings = () => {
                 onChange={(e) => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
                 required
                 placeholder="Например: ДП-выкладчик"
+                helperText="Можно создавать несколько шаблонов с одинаковыми названиями для одного типа договора"
               />
             </Grid>
 
@@ -664,7 +732,9 @@ const ContractSettings = () => {
           <Button
             variant="contained"
             onClick={handleAddTemplate}
-            disabled={!newTemplate.name || newTemplate.workServices.filter(service => service.trim() !== '').length === 0 || newTemplate.contractTypeId === 0}
+            disabled={!newTemplate.name.trim() ||
+                     newTemplate.workServices.filter(service => service.trim() !== '').length === 0 ||
+                     !newTemplate.contractTypeId || newTemplate.contractTypeId === 0}
           >
             Добавить шаблон
           </Button>
@@ -692,22 +762,19 @@ const ContractSettings = () => {
           {selectedTemplate && (
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <FormControl fullWidth>
+                <FormControl fullWidth required>
                   <InputLabel>Тип договора</InputLabel>
                   <Select
                     label="Тип договора"
-                    value={selectedTemplate.contractTypeId}
+                    value={selectedTemplate.contractTypeId || contractTypes[0]?.id || ''}
                     onChange={(e) => {
                       const contractTypeId = parseInt(e.target.value as string);
-                      setSelectedTemplate(prev => prev ? {
-                        ...prev,
-                        contractTypeId
-                      } : null);
+                      handleContractTypeChange(contractTypeId, false);
                     }}
                   >
                     {contractTypes.map((type) => (
                       <MenuItem key={type.id} value={type.id}>
-                        {type.name}
+                        {type.name} ({type.code})
                       </MenuItem>
                     ))}
                   </Select>
@@ -720,6 +787,7 @@ const ContractSettings = () => {
                   value={selectedTemplate.name}
                   onChange={(e) => setSelectedTemplate(prev => prev ? { ...prev, name: e.target.value } : null)}
                   required
+                  helperText="Можно создавать несколько шаблонов с одинаковыми названиями для одного типа договора"
                 />
               </Grid>
 
@@ -783,7 +851,9 @@ const ContractSettings = () => {
           <Button
             variant="contained"
             onClick={handleEditTemplate}
-            disabled={!selectedTemplate?.name || selectedTemplate.workServices.filter(service => service.trim() !== '').length === 0}
+            disabled={!selectedTemplate?.name.trim() ||
+                     selectedTemplate.workServices.filter(service => service.trim() !== '').length === 0 ||
+                     !selectedTemplate.contractTypeId || selectedTemplate.contractTypeId === 0}
           >
             Сохранить изменения
           </Button>

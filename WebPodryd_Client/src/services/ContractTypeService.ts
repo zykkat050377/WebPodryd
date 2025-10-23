@@ -10,62 +10,48 @@ export interface ContractType {
   updatedAt: string;
 }
 
-export interface CreateContractTypeRequest {
-  name: string;
-  code: string;
-  description?: string;
-}
-
-export interface UpdateContractTypeRequest {
-  name?: string;
-  code?: string;
-  description?: string;
-}
-
 // Временные данные для разработки
 const mockContractTypes: ContractType[] = [
   {
     id: 1,
-    name: 'Договор подряда (операция)',
+    name: 'За операцию',
     code: 'operation',
-    description: 'Оплата за выполнение операций',
-    createdAt: '2024-01-01',
-    updatedAt: '2024-01-01'
+    description: 'Оплата за каждую выполненную операцию',
+    createdAt: '2025-10-23T06:53:29.8763055',
+    updatedAt: '2025-10-23T06:53:29.8763171'
   },
   {
     id: 2,
-    name: 'Договор подряда (нормо-час)',
+    name: 'Нормочаса',
     code: 'norm-hour',
-    description: 'Оплата по нормо-часам',
-    createdAt: '2024-01-01',
-    updatedAt: '2024-01-01'
+    description: 'Оплата по нормочасам работы',
+    createdAt: '2025-10-23T06:53:29.8763265',
+    updatedAt: '2025-10-23T06:53:29.8763266'
   },
   {
     id: 3,
-    name: 'Договор подряда (стоимость)',
+    name: 'Стоимость',
     code: 'cost',
-    description: 'Оплата по фиксированной стоимости',
-    createdAt: '2024-01-01',
-    updatedAt: '2024-01-01'
+    description: 'Фиксированная стоимость работ/услуг',
+    createdAt: '2025-10-23T06:53:29.8763269',
+    updatedAt: '2025-10-23T06:53:29.8763270'
   }
 ];
 
 export const ContractTypeService = {
   async getAllContractTypes(): Promise<ContractType[]> {
     try {
-      // Пробуем получить данные с API
       const response = await systemApi.get('/api/ContractType');
       return response.data;
     } catch (error) {
       console.warn('API недоступно, используем временные данные типов договоров');
-      // Возвращаем временные данные для разработки
       return mockContractTypes;
     }
   },
 
   async getContractTypeById(id: number): Promise<ContractType> {
     try {
-      const response = await systemApi.get(`/api/ContractTypes/${id}`);
+      const response = await systemApi.get(`/api/ContractType/${id}`);
       return response.data;
     } catch (error) {
       console.warn('API недоступно, используем временные данные');
@@ -85,18 +71,5 @@ export const ContractTypeService = {
       if (!type) throw new Error('Тип договора не найден');
       return type;
     }
-  },
-
-  async createContractType(contractTypeData: CreateContractTypeRequest): Promise<ContractType> {
-    const response = await systemApi.post('/api/ContractType', contractTypeData);
-    return response.data;
-  },
-
-  async updateContractType(id: number, contractTypeData: UpdateContractTypeRequest): Promise<void> {
-    await systemApi.put(`/api/ContractType/${id}`, contractTypeData);
-  },
-
-  async deleteContractType(id: number): Promise<void> {
-    await systemApi.delete(`/api/ContractType/${id}`);
   }
 };

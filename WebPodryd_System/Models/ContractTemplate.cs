@@ -3,44 +3,81 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using WebPodryd_System.DTO;
 
 namespace WebPodryd_System.Models
 {
+    [Table("ContractTemplates")]
     public class ContractTemplate
     {
         [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int Id { get; set; }
 
         [Required]
-        [MaxLength(200)]
+        [StringLength(200)]
         public string Name { get; set; }
 
-        // НОВОЕ: Связь с типом договора
+        [Required]
+        [StringLength(50)]
+        public string Type { get; set; } // operation, norm-hour, cost
+
         [Required]
         public int ContractTypeId { get; set; }
+
+        [ForeignKey("ContractTypeId")]
         public ContractType ContractType { get; set; }
 
-        // Тип договора: operation, norm-hour, cost (оставляем для обратной совместимости)
         [Required]
-        [MaxLength(20)]
-        public string Type { get; set; }
-
-        // JSON-строка для хранения массива работ/услуг
-        [Required]
+        [Column(TypeName = "nvarchar(max)")]
         public string WorkServicesJson { get; set; }
 
-        // Для типа "operation" - количество операций за 8 часов
-        public int? OperationsPer8Hours { get; set; }
+        [Required]
+        public DateTime CreatedAt { get; set; }
 
+        [Required]
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    public class CreateContractTemplateDto
+    {
+        [Required]
+        [StringLength(200)]
+        public string Name { get; set; }
+
+        [Required]
+        [StringLength(50)]
+        public string Type { get; set; }
+
+        [Required]
+        public int ContractTypeId { get; set; }
+
+        [Required]
+        public List<string> WorkServices { get; set; } = new List<string>();
+    }
+
+    public class UpdateContractTemplateDto
+    {
+        [StringLength(200)]
+        public string Name { get; set; }
+
+        [StringLength(50)]
+        public string Type { get; set; }
+
+        public int? ContractTypeId { get; set; }
+
+        public List<string> WorkServices { get; set; }
+    }
+
+    public class ContractTemplateDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Type { get; set; }
+        public int ContractTypeId { get; set; }
+        public ContractTypeDto ContractType { get; set; }
+        public List<string> WorkServices { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
-
-        // Вспомогательное свойство для работы с JSON
-        [NotMapped]
-        public List<string> WorkServices
-        {
-            get => System.Text.Json.JsonSerializer.Deserialize<List<string>>(WorkServicesJson ?? "[]") ?? new List<string>();
-            set => WorkServicesJson = System.Text.Json.JsonSerializer.Serialize(value ?? new List<string>());
-        }
     }
 }
