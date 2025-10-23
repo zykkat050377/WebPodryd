@@ -1,0 +1,10 @@
+/* src/components/Layout/styles/Navbar.module.css */
+.logoLink {
+  display: block;
+  text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.logoLink:hover {
+  transform: scale(1.05);
+}

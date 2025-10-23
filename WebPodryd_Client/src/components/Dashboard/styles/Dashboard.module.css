@@ -1,0 +1,25 @@
+/* src/components/Dashboard/styles/Dashboard.module.css */
+.dashboard {
+  padding: 24px;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.locationsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.locationItem {
+  padding: 8px 12px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+}
+
+.contractsList {
+  margin-top: 32px;
+}

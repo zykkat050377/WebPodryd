@@ -1,0 +1,18 @@
+/* src/components/common/styles/Logo.module.css */
+.logoLink {
+  display: block;
+  text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.logoLink:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+.logoImage {
+  width: 110px;
+  height: auto;
+  margin: 0 auto;
+  fill: white; /* Управление цветом SVG */
+}

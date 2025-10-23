@@ -1,0 +1,12 @@
+/* src/App.css */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background: red
+}
+
+.main-content {
+  flex-grow: 1;
+  padding: 24px;
+  background-color: #fff;
+}
