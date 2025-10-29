@@ -26,6 +26,9 @@ namespace WebPodryd_System.Data
         public DbSet<ContractTemplate> ContractTemplates { get; set; }
         public DbSet<ContractType> ContractTypes { get; set; }
 
+        // НОВЫЙ DbSet для ActTemplates
+        public DbSet<ActTemplate> ActTemplates { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Конфигурация для UserDepartment
@@ -169,7 +172,7 @@ namespace WebPodryd_System.Data
                 entity.HasIndex(ws => ws.WorkServiceName);
             });
 
-            // Конфигурация для ContractTemplate
+            // В методе OnModelCreating:
             modelBuilder.Entity<ContractTemplate>(entity =>
             {
                 entity.Property(t => t.Name).IsRequired().HasMaxLength(200);
@@ -183,7 +186,7 @@ namespace WebPodryd_System.Data
                       .OnDelete(DeleteBehavior.Restrict);
 
                 // Индексы
-                entity.HasIndex(t => new { t.Name, t.ContractTypeId }).IsUnique();
+                entity.HasIndex(t => t.Name);
                 entity.HasIndex(t => t.ContractTypeId);
 
                 // Значения по умолчанию
@@ -191,7 +194,41 @@ namespace WebPodryd_System.Data
                 entity.Property(t => t.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
             });
 
-            // КОНФИГУРАЦИЯ ДЛЯ ContractType
+            modelBuilder.Entity<ActTemplate>(entity =>
+            {
+                entity.Property(at => at.Name).IsRequired().HasMaxLength(200);
+                entity.Property(at => at.WorkServicesJson).IsRequired();
+                entity.Property(at => at.TotalCost).HasColumnType("decimal(18,2)").IsRequired();
+
+                // Связи
+                entity.HasOne(at => at.ContractType)
+                      .WithMany()
+                      .HasForeignKey(at => at.ContractTypeId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(at => at.ContractTemplate)
+                      .WithMany(ct => ct.ActTemplates)
+                      .HasForeignKey(at => at.ContractTemplateId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(at => at.Department)
+                      .WithMany()
+                      .HasForeignKey(at => at.DepartmentId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Индексы
+                entity.HasIndex(at => at.ContractTypeId);
+                entity.HasIndex(at => at.ContractTemplateId);
+                entity.HasIndex(at => at.DepartmentId);
+                entity.HasIndex(at => at.Name);
+
+                // Значения по умолчанию
+                entity.Property(at => at.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(at => at.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(at => at.TotalCost).HasDefaultValue(0);
+            });
+
+            // Конфигурация для ContractType
             modelBuilder.Entity<ContractType>(entity =>
             {
                 entity.Property(ct => ct.Name).IsRequired().HasMaxLength(50);
@@ -202,6 +239,35 @@ namespace WebPodryd_System.Data
 
                 entity.Property(ct => ct.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
                 entity.Property(ct => ct.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            });
+
+            // НОВАЯ КОНФИГУРАЦИЯ ДЛЯ ActTemplate
+            modelBuilder.Entity<ActTemplate>(entity =>
+            {
+                entity.Property(at => at.Name).IsRequired().HasMaxLength(200);
+                entity.Property(at => at.WorkServicesJson).IsRequired();
+                entity.Property(at => at.TotalCost).HasColumnType("decimal(18,2)").IsRequired();
+
+                // Связи
+                entity.HasOne(at => at.ContractType)
+                      .WithMany()
+                      .HasForeignKey(at => at.ContractTypeId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(at => at.Department)
+                      .WithMany()
+                      .HasForeignKey(at => at.DepartmentId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Индексы
+                entity.HasIndex(at => at.ContractTypeId);
+                entity.HasIndex(at => at.DepartmentId);
+                entity.HasIndex(at => at.Name);
+
+                // Значения по умолчанию
+                entity.Property(at => at.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(at => at.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(at => at.TotalCost).HasDefaultValue(0);
             });
 
             // Связи для BankDetail и Address
@@ -262,7 +328,7 @@ namespace WebPodryd_System.Data
                 .Property(se => se.CreatedAt)
                 .HasDefaultValueSql("GETUTCDATE()");
 
-            // ДАННЫЕ ПО УМОЛЧАНИЮ ДЛЯ ContractTypes
+            // Данные по умолчанию для ContractTypes
             modelBuilder.Entity<ContractType>().HasData(
                 new ContractType
                 {

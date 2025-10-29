@@ -83,9 +83,14 @@ export interface WorkService {
 export interface ActTemplate {
   id: number;
   name: string;
-  type: 'operation' | 'norm-hour' | 'cost';
+  contractTypeId: number;
+  contractType: ContractType;
+  contractTemplateId: number;
+  contractTemplate: ContractTemplate;
   workServices: WorkService[];
-  structuralUnit: string;
+  departmentId: number;
+  department: Department;
+  totalCost: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -264,6 +269,11 @@ export interface CreateContractWorkService {
   fixedCost?: number;
 }
 
+export interface WorkService {
+  name: string;
+  cost: number;
+}
+
 export interface UpdateContractRequest {
   contractDate?: string;
   startDate?: string;
@@ -297,6 +307,12 @@ export interface ContractsResponse {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export interface Department {
+  id: number;
+  name: string;
+  code?: string;
 }
 
 export interface ContractStats {

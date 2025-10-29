@@ -88,8 +88,6 @@ const AppRoutes = () => {
         }
       />
 
-
-
       <Route
         path="/passport-data"
         element={

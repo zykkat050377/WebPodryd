@@ -12,18 +12,15 @@ namespace WebPodryd_System.DTO
         [Required]
         public string Name { get; set; }
 
-        // НОВОЕ: ID типа договора
+        [Required]
+        public string Type { get; set; } // operation, norm-hour, cost
+
         [Required]
         public int ContractTypeId { get; set; }
         public ContractTypeDto ContractType { get; set; }
 
         [Required]
-        public string Type { get; set; } // operation, norm-hour, cost
-
-        [Required]
         public List<string> WorkServices { get; set; }
-
-        public int? OperationsPer8Hours { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -35,20 +32,19 @@ namespace WebPodryd_System.DTO
         [MaxLength(200)]
         public string Name { get; set; }
 
-        // НОВОЕ: ID типа договора
         [Required]
         public int ContractTypeId { get; set; }
 
-        [Required]
-        [MaxLength(20)]
-        public string Type { get; set; }
+        public int? DepartmentId { get; set; } // Теперь необязательный
+
+        public decimal? Cost { get; set; } // Теперь необязательный
 
         [Required]
         [MinLength(1, ErrorMessage = "Должна быть указана хотя бы одна работа/услуга")]
         public List<string> WorkServices { get; set; }
 
-        [Range(1, 1000)]
-        public int? OperationsPer8Hours { get; set; }
+        public string CreatedBy { get; set; }
+        public string UpdatedBy { get; set; }
     }
 
     public class UpdateContractTemplateDto
@@ -56,16 +52,15 @@ namespace WebPodryd_System.DTO
         [MaxLength(200)]
         public string Name { get; set; }
 
-        // НОВОЕ: ID типа договора
         public int? ContractTypeId { get; set; }
 
-        [MaxLength(20)]
-        public string Type { get; set; }
+        public int? DepartmentId { get; set; }
+
+        public decimal? Cost { get; set; }
 
         [MinLength(1, ErrorMessage = "Должна быть указана хотя бы одна работа/услуга")]
         public List<string> WorkServices { get; set; }
 
-        [Range(1, 1000)]
-        public int? OperationsPer8Hours { get; set; }
+        public string UpdatedBy { get; set; }
     }
 }

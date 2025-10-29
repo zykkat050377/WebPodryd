@@ -5,17 +5,18 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Text.Json;
 using WebPodryd_System.Data;
 using WebPodryd_System.Models;
 using WebPodryd_System.DTO;
-using System.Text.Json;
-using Microsoft.AspNetCore.Cors;
+using ContractTemplateDto = WebPodryd_System.DTO.ContractTemplateDto;
+using UpdateContractTemplateDto = WebPodryd_System.DTO.UpdateContractTemplateDto;
+using CreateContractTemplateDto = WebPodryd_System.DTO.CreateContractTemplateDto;
 
 namespace WebPodryd_System.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [EnableCors("AllowFrontend")]
     public class ContractTemplateController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -40,61 +41,73 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
+                Console.WriteLine($"Getting contract templates. Type: {type}, ContractTypeId: {contractTypeId}, Search: {search}");
+
                 var query = _context.ContractTemplates
-                    .Include(t => t.ContractType) // НОВОЕ: включаем ContractType
+                    .Include(t => t.ContractType)
                     .AsQueryable();
 
-                // Фильтр по типу (для обратной совместимости)
                 if (!string.IsNullOrEmpty(type) && type != "all")
                 {
-                    query = query.Where(t => t.Type == type);
+                    query = query.Where(t => t.ContractType.Code == type);
                 }
 
-                // НОВОЕ: фильтр по ID типа договора
                 if (contractTypeId.HasValue && contractTypeId > 0)
                 {
                     query = query.Where(t => t.ContractTypeId == contractTypeId.Value);
                 }
 
-                // Поиск по названию или работам/услугам
                 if (!string.IsNullOrEmpty(search))
                 {
-                    query = query.Where(t =>
-                        t.Name.Contains(search) ||
-                        t.WorkServicesJson.Contains(search) ||
-                        t.ContractType.Name.Contains(search)); // НОВОЕ: поиск по названию типа договора
+                    query = query.Where(t => t.Name.Contains(search) ||
+                                           t.WorkServicesJson.Contains(search));
                 }
 
                 var templates = await query
                     .OrderBy(t => t.Name)
                     .ToListAsync();
 
-                var result = templates.Select(t => new ContractTemplateDto
+                Console.WriteLine($"Found {templates.Count} templates");
+
+                var result = new List<ContractTemplateDto>();
+                foreach (var template in templates)
                 {
-                    Id = t.Id,
-                    Name = t.Name,
-                    Type = t.Type,
-                    // НОВОЕ: добавляем ContractTypeId и ContractType
-                    ContractTypeId = t.ContractTypeId,
-                    ContractType = new ContractTypeDto
+                    List<string> workServices;
+                    try
                     {
-                        Id = t.ContractType.Id,
-                        Name = t.ContractType.Name,
-                        Code = t.ContractType.Code,
-                        Description = t.ContractType.Description,
-                        CreatedAt = t.ContractType.CreatedAt,
-                        UpdatedAt = t.ContractType.UpdatedAt
-                    },
-                    WorkServices = JsonSerializer.Deserialize<List<string>>(t.WorkServicesJson, _jsonOptions) ?? new List<string>(),
-                    OperationsPer8Hours = t.OperationsPer8Hours,
-                    CreatedAt = t.CreatedAt,
-                    UpdatedAt = t.UpdatedAt
-                }).ToList();
+                        workServices = JsonSerializer.Deserialize<List<string>>(template.WorkServicesJson, _jsonOptions) ?? new List<string>();
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        Console.WriteLine($"JSON deserialization error for template {template.Id}: {jsonEx.Message}");
+                        workServices = new List<string>();
+                    }
+
+                    result.Add(new ContractTemplateDto
+                    {
+                        Id = template.Id,
+                        Name = template.Name,
+                        Type = template.Type,
+                        ContractTypeId = template.ContractTypeId,
+                        ContractType = new ContractTypeDto
+                        {
+                            Id = template.ContractType.Id,
+                            Name = template.ContractType.Name,
+                            Code = template.ContractType.Code,
+                            Description = template.ContractType.Description
+                        },
+                        WorkServices = workServices,
+                        CreatedAt = template.CreatedAt,
+                        UpdatedAt = template.UpdatedAt
+                    });
+                }
 
                 return Ok(result);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error getting contract templates: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -105,13 +118,27 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
+                Console.WriteLine($"Getting contract template with ID: {id}");
+
                 var template = await _context.ContractTemplates
-                    .Include(t => t.ContractType) // НОВОЕ: включаем ContractType
+                    .Include(t => t.ContractType)
                     .FirstOrDefaultAsync(t => t.Id == id);
 
                 if (template == null)
                 {
+                    Console.WriteLine($"Contract template with ID {id} not found");
                     return NotFound("Шаблон договора не найден");
+                }
+
+                List<string> workServices;
+                try
+                {
+                    workServices = JsonSerializer.Deserialize<List<string>>(template.WorkServicesJson, _jsonOptions) ?? new List<string>();
+                }
+                catch (Exception jsonEx)
+                {
+                    Console.WriteLine($"JSON deserialization error for template {template.Id}: {jsonEx.Message}");
+                    workServices = new List<string>();
                 }
 
                 var result = new ContractTemplateDto
@@ -119,27 +146,26 @@ namespace WebPodryd_System.Controllers
                     Id = template.Id,
                     Name = template.Name,
                     Type = template.Type,
-                    // НОВОЕ: добавляем ContractTypeId и ContractType
                     ContractTypeId = template.ContractTypeId,
                     ContractType = new ContractTypeDto
                     {
                         Id = template.ContractType.Id,
                         Name = template.ContractType.Name,
                         Code = template.ContractType.Code,
-                        Description = template.ContractType.Description,
-                        CreatedAt = template.ContractType.CreatedAt,
-                        UpdatedAt = template.ContractType.UpdatedAt
+                        Description = template.ContractType.Description
                     },
-                    WorkServices = JsonSerializer.Deserialize<List<string>>(template.WorkServicesJson, _jsonOptions) ?? new List<string>(),
-                    OperationsPer8Hours = template.OperationsPer8Hours,
+                    WorkServices = workServices,
                     CreatedAt = template.CreatedAt,
                     UpdatedAt = template.UpdatedAt
                 };
 
+                Console.WriteLine($"Successfully retrieved template {id}");
                 return Ok(result);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error getting contract template {id}: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -150,71 +176,124 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
+                Console.WriteLine($"Received create request: Name={createDto.Name}, ContractTypeId={createDto.ContractTypeId}, WorkServicesCount={createDto.WorkServices?.Count}");
+
                 if (!ModelState.IsValid)
                 {
-                    return BadRequest(ModelState);
+                    var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage);
+                    Console.WriteLine($"Model validation failed: {string.Join(", ", errors)}");
+                    return BadRequest(new
+                    {
+                        Message = "Validation failed",
+                        Errors = errors
+                    });
                 }
 
-                // НОВОЕ: проверяем существование типа договора
+                // Проверяем существование типа договора
                 var contractType = await _context.ContractTypes.FindAsync(createDto.ContractTypeId);
                 if (contractType == null)
                 {
+                    Console.WriteLine($"Contract type with ID {createDto.ContractTypeId} not found");
                     return BadRequest("Указанный тип договора не найден");
                 }
 
-                // Проверяем уникальность названия (обновлено для работы с ContractTypeId)
-                var existingTemplate = await _context.ContractTemplates
-                    .FirstOrDefaultAsync(t => t.Name == createDto.Name && t.ContractTypeId == createDto.ContractTypeId);
-
-                if (existingTemplate != null)
+                // Сериализуем работы/услуги в JSON
+                var workServicesJson = "[]";
+                if (createDto.WorkServices != null && createDto.WorkServices.Any())
                 {
-                    return BadRequest("Шаблон с таким названием и типом уже существует");
+                    try
+                    {
+                        workServicesJson = JsonSerializer.Serialize(createDto.WorkServices, _jsonOptions);
+                        Console.WriteLine($"Serialized work services: {workServicesJson}");
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        Console.WriteLine($"JSON serialization error: {jsonEx.Message}");
+                        return BadRequest($"Ошибка сериализации работ/услуг: {jsonEx.Message}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("No work services provided, using empty array");
                 }
 
+                // ИСПРАВЛЕНИЕ: DepartmentId не обязателен для ContractTemplate
                 var template = new ContractTemplate
                 {
-                    Name = createDto.Name,
-                    ContractTypeId = createDto.ContractTypeId, // НОВОЕ
-                    Type = contractType.Code, // НОВОЕ: используем код из ContractType
-                    WorkServicesJson = JsonSerializer.Serialize(createDto.WorkServices, _jsonOptions),
-                    OperationsPer8Hours = createDto.OperationsPer8Hours,
+                    Name = createDto.Name.Trim(),
+                    Type = contractType.Code,
+                    ContractTypeId = createDto.ContractTypeId,
+                    WorkServicesJson = workServicesJson,
                     CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    UpdatedAt = DateTime.UtcNow,
+                    CreatedBy = createDto.CreatedBy,
+                    UpdatedBy = createDto.UpdatedBy
+                    // DepartmentId и Cost убраны
                 };
 
-                _context.ContractTemplates.Add(template);
-                await _context.SaveChangesAsync();
+                Console.WriteLine($"Creating template: Name={template.Name}, Type={template.Type}, ContractTypeId={template.ContractTypeId}");
 
-                // Получаем созданный шаблон с включенным ContractType
-                var createdTemplate = await _context.ContractTemplates
-                    .Include(t => t.ContractType)
-                    .FirstOrDefaultAsync(t => t.Id == template.Id);
+                _context.ContractTemplates.Add(template);
+
+                try
+                {
+                    await _context.SaveChangesAsync();
+                    Console.WriteLine($"Template created successfully with ID: {template.Id}");
+                }
+                catch (DbUpdateException dbEx)
+                {
+                    Console.WriteLine($"Database error: {dbEx.Message}");
+                    Console.WriteLine($"Inner exception: {dbEx.InnerException?.Message}");
+                    Console.WriteLine($"Stack trace: {dbEx.StackTrace}");
+                    return StatusCode(500, $"Ошибка базы данных: {dbEx.InnerException?.Message ?? dbEx.Message}");
+                }
+
+                // Загружаем связанные данные
+                await _context.Entry(template)
+                    .Reference(t => t.ContractType)
+                    .LoadAsync();
+
+                // Десериализуем работы/услуги для ответа
+                List<string> workServices;
+                try
+                {
+                    workServices = JsonSerializer.Deserialize<List<string>>(template.WorkServicesJson, _jsonOptions) ?? new List<string>();
+                }
+                catch (Exception jsonEx)
+                {
+                    Console.WriteLine($"JSON deserialization error: {jsonEx.Message}");
+                    workServices = new List<string>();
+                }
 
                 var result = new ContractTemplateDto
                 {
-                    Id = createdTemplate.Id,
-                    Name = createdTemplate.Name,
-                    Type = createdTemplate.Type,
-                    ContractTypeId = createdTemplate.ContractTypeId,
+                    Id = template.Id,
+                    Name = template.Name,
+                    Type = template.Type,
+                    ContractTypeId = template.ContractTypeId,
                     ContractType = new ContractTypeDto
                     {
-                        Id = createdTemplate.ContractType.Id,
-                        Name = createdTemplate.ContractType.Name,
-                        Code = createdTemplate.ContractType.Code,
-                        Description = createdTemplate.ContractType.Description,
-                        CreatedAt = createdTemplate.ContractType.CreatedAt,
-                        UpdatedAt = createdTemplate.ContractType.UpdatedAt
+                        Id = template.ContractType.Id,
+                        Name = template.ContractType.Name,
+                        Code = template.ContractType.Code,
+                        Description = template.ContractType.Description
                     },
-                    WorkServices = createDto.WorkServices,
-                    OperationsPer8Hours = createdTemplate.OperationsPer8Hours,
-                    CreatedAt = createdTemplate.CreatedAt,
-                    UpdatedAt = createdTemplate.UpdatedAt
+                    WorkServices = workServices,
+                    CreatedAt = template.CreatedAt,
+                    UpdatedAt = template.UpdatedAt
                 };
 
+                Console.WriteLine($"Returning created template with ID: {result.Id}");
                 return CreatedAtAction(nameof(GetContractTemplate), new { id = template.Id }, result);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Unhandled exception in CreateContractTemplate: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -225,82 +304,83 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
+                Console.WriteLine($"Received update request for ID {id}");
 
-                var template = await _context.ContractTemplates.FindAsync(id);
+                var template = await _context.ContractTemplates
+                    .Include(t => t.ContractType)
+                    .FirstOrDefaultAsync(t => t.Id == id);
 
                 if (template == null)
                 {
+                    Console.WriteLine($"Contract template with ID {id} not found");
                     return NotFound("Шаблон договора не найден");
                 }
 
-                // НОВОЕ: если меняется ContractTypeId, проверяем существование нового типа
-                ContractType newContractType = null;
-                if (updateDto.ContractTypeId.HasValue && updateDto.ContractTypeId.Value != template.ContractTypeId)
-                {
-                    newContractType = await _context.ContractTypes.FindAsync(updateDto.ContractTypeId.Value);
-                    if (newContractType == null)
-                    {
-                        return BadRequest("Указанный тип договора не найден");
-                    }
-                }
+                Console.WriteLine($"Found template: {template.Name}, Current ContractTypeId: {template.ContractTypeId}");
 
-                // Проверяем уникальность названия (обновлено для работы с ContractTypeId)
-                if (!string.IsNullOrEmpty(updateDto.Name) && updateDto.Name != template.Name)
-                {
-                    var targetContractTypeId = updateDto.ContractTypeId ?? template.ContractTypeId;
-                    var existingTemplate = await _context.ContractTemplates
-                        .FirstOrDefaultAsync(t => t.Name == updateDto.Name &&
-                                               t.ContractTypeId == targetContractTypeId &&
-                                               t.Id != id);
-
-                    if (existingTemplate != null)
-                    {
-                        return BadRequest("Шаблон с таким названием и типом уже существует");
-                    }
-                }
-
-                // Обновляем поля
+                // Обновляем только переданные поля
                 if (!string.IsNullOrEmpty(updateDto.Name))
-                    template.Name = updateDto.Name;
+                {
+                    template.Name = updateDto.Name.Trim();
+                    Console.WriteLine($"Updating name to: {template.Name}");
+                }
 
-                // НОВОЕ: обновляем ContractTypeId и Type
+                // Если передан ContractTypeId, обновляем его и Type
                 if (updateDto.ContractTypeId.HasValue)
                 {
+                    var contractType = await _context.ContractTypes.FindAsync(updateDto.ContractTypeId.Value);
+                    if (contractType == null)
+                    {
+                        Console.WriteLine($"Contract type with ID {updateDto.ContractTypeId.Value} not found");
+                        return BadRequest("Указанный тип договора не найден");
+                    }
                     template.ContractTypeId = updateDto.ContractTypeId.Value;
-                    template.Type = newContractType?.Code ?? template.Type;
+                    template.Type = contractType.Code; // Обновляем Type
+                    Console.WriteLine($"Updated ContractTypeId to: {template.ContractTypeId}, Type to: {template.Type}");
                 }
 
-                // Для обратной совместимости оставляем обновление Type
-                if (!string.IsNullOrEmpty(updateDto.Type))
+                // Обновляем работы/услуги если переданы
+                if (updateDto.WorkServices != null)
                 {
-                    // Если указан Type, находим соответствующий ContractType
-                    var contractTypeByCode = await _context.ContractTypes
-                        .FirstOrDefaultAsync(ct => ct.Code == updateDto.Type);
-                    if (contractTypeByCode != null)
+                    try
                     {
-                        template.ContractTypeId = contractTypeByCode.Id;
-                        template.Type = updateDto.Type;
+                        template.WorkServicesJson = JsonSerializer.Serialize(updateDto.WorkServices, _jsonOptions);
+                        Console.WriteLine($"Updated work services, count: {updateDto.WorkServices.Count}");
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        Console.WriteLine($"JSON serialization error: {jsonEx.Message}");
+                        return BadRequest($"Ошибка сериализации работ/услуг: {jsonEx.Message}");
                     }
                 }
 
-                if (updateDto.WorkServices != null)
-                    template.WorkServicesJson = JsonSerializer.Serialize(updateDto.WorkServices, _jsonOptions);
-
-                if (updateDto.OperationsPer8Hours.HasValue)
-                    template.OperationsPer8Hours = updateDto.OperationsPer8Hours.Value;
-
                 template.UpdatedAt = DateTime.UtcNow;
+                template.UpdatedBy = updateDto.UpdatedBy;
+                Console.WriteLine($"Updated timestamp to: {template.UpdatedAt}");
 
-                await _context.SaveChangesAsync();
+                try
+                {
+                    await _context.SaveChangesAsync();
+                    Console.WriteLine($"Template {id} updated successfully");
+                }
+                catch (DbUpdateException dbEx)
+                {
+                    Console.WriteLine($"Database update error: {dbEx.Message}");
+                    Console.WriteLine($"Inner exception: {dbEx.InnerException?.Message}");
+                    Console.WriteLine($"Stack trace: {dbEx.StackTrace}");
+                    return StatusCode(500, $"Ошибка базы данных: {dbEx.InnerException?.Message ?? dbEx.Message}");
+                }
 
                 return NoContent();
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Unhandled exception in UpdateContractTemplate: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -311,22 +391,83 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
-                var template = await _context.ContractTemplates.FindAsync(id);
+                Console.WriteLine($"Deleting contract template with ID: {id}");
+
+                var template = await _context.ContractTemplates
+                    .Include(t => t.ActTemplates)
+                    .FirstOrDefaultAsync(t => t.Id == id);
 
                 if (template == null)
                 {
-                    return NotFound("Шаблон договора не найден");
+                    Console.WriteLine($"Contract template with ID {id} not found");
+                    return NotFound(new { message = "Шаблон договора не найден" });
                 }
 
-                // НОВОЕ: проверяем, нет ли связанных договоров
-                var hasContracts = await _context.Contracts
-                    .AnyAsync(c => c.ContractTemplateName == template.Name);
-
-                if (hasContracts)
+                // Проверяем, есть ли зависимые ActTemplate
+                if (template.ActTemplates != null && template.ActTemplates.Any())
                 {
-                    return BadRequest("Нельзя удалить шаблон договора, так как с ним связаны договоры");
+                    var dependentCount = template.ActTemplates.Count;
+                    Console.WriteLine($"Cannot delete template {id} - it has {dependentCount} dependent act templates");
+
+                    return BadRequest(new
+                    {
+                        message = "Невозможно удалить шаблон договора",
+                        details = $"Существуют {dependentCount} зависимых шаблонов актов. Сначала удалите их.",
+                        dependentActTemplatesCount = dependentCount
+                    });
                 }
 
+                _context.ContractTemplates.Remove(template);
+                await _context.SaveChangesAsync();
+
+                Console.WriteLine($"Contract template {id} deleted successfully");
+                return NoContent();
+            }
+            catch (DbUpdateException dbEx)
+            {
+                Console.WriteLine($"Database error during delete: {dbEx.Message}");
+                Console.WriteLine($"Inner exception: {dbEx.InnerException?.Message}");
+
+                return StatusCode(500, new
+                {
+                    message = "Ошибка базы данных",
+                    details = dbEx.InnerException?.Message ?? dbEx.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting contract template {id}: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, new
+                {
+                    message = "Внутренняя ошибка сервера",
+                    details = ex.Message
+                });
+            }
+        }
+
+        // DELETE: api/contracttemplate/{id}/with-dependencies
+        [HttpDelete("{id}/with-dependencies")]
+        public async Task<IActionResult> DeleteContractTemplateWithDependencies(int id)
+        {
+            try
+            {
+                var template = await _context.ContractTemplates
+                    .Include(t => t.ActTemplates)
+                    .FirstOrDefaultAsync(t => t.Id == id);
+
+                if (template == null)
+                {
+                    return NotFound(new { message = "Шаблон договора не найден" });
+                }
+
+                // Удаляем зависимые ActTemplate
+                if (template.ActTemplates != null && template.ActTemplates.Any())
+                {
+                    _context.ActTemplates.RemoveRange(template.ActTemplates);
+                }
+
+                // Удаляем основной template
                 _context.ContractTemplates.Remove(template);
                 await _context.SaveChangesAsync();
 
@@ -334,9 +475,15 @@ namespace WebPodryd_System.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Internal server error: {ex.Message}");
+                Console.WriteLine($"Error deleting template with dependencies: {ex.Message}");
+                return StatusCode(500, new
+                {
+                    message = "Ошибка при удалении шаблона с зависимостями",
+                    details = ex.Message
+                });
             }
         }
+
 
         // GET: api/contracttemplate/types
         [HttpGet("types")]
@@ -344,22 +491,24 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
-                // НОВОЕ: получаем типы из базы данных вместо хардкода
-                var contractTypes = await _context.ContractTypes
-                    .OrderBy(ct => ct.Name)
+                Console.WriteLine("Getting contract template types");
+
+                var types = await _context.ContractTypes
                     .Select(ct => new
                     {
                         value = ct.Code,
                         label = ct.Name,
-                        id = ct.Id,
-                        description = ct.Description
+                        id = ct.Id
                     })
                     .ToListAsync();
 
-                return Ok(contractTypes);
+                Console.WriteLine($"Found {types.Count} contract types");
+                return Ok(types);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error getting contract template types: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -370,81 +519,90 @@ namespace WebPodryd_System.Controllers
         {
             try
             {
+                Console.WriteLine($"Getting work services for type: {type}");
+
                 var templates = await _context.ContractTemplates
-                    .Where(t => t.Type == type)
+                    .Include(t => t.ContractType)
+                    .Where(t => t.ContractType.Code == type)
                     .ToListAsync();
 
-                var services = templates
-                    .SelectMany(t => JsonSerializer.Deserialize<List<string>>(t.WorkServicesJson, _jsonOptions) ?? new List<string>())
-                    .Distinct()
-                    .OrderBy(s => s)
-                    .ToList();
+                var services = new List<string>();
+                foreach (var template in templates)
+                {
+                    try
+                    {
+                        var templateServices = JsonSerializer.Deserialize<List<string>>(template.WorkServicesJson, _jsonOptions) ?? new List<string>();
+                        services.AddRange(templateServices);
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        Console.WriteLine($"JSON deserialization error for template {template.Id}: {jsonEx.Message}");
+                        // Игнорируем ошибки десериализации
+                    }
+                }
 
-                return Ok(services);
+                var distinctServices = services.Distinct().OrderBy(s => s).ToList();
+                Console.WriteLine($"Found {distinctServices.Count} distinct services for type {type}");
+                return Ok(distinctServices);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error getting work services for type {type}: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
 
-        // НОВЫЙ МЕТОД: получение шаблонов по ID типа договора
+        // GET: api/contracttemplate/by-contract-type/{contractTypeId}
         [HttpGet("by-contract-type/{contractTypeId}")]
         public async Task<ActionResult<IEnumerable<ContractTemplateDto>>> GetTemplatesByContractType(int contractTypeId)
         {
             try
             {
+                Console.WriteLine($"Getting templates for contract type ID: {contractTypeId}");
+
                 var templates = await _context.ContractTemplates
                     .Include(t => t.ContractType)
                     .Where(t => t.ContractTypeId == contractTypeId)
                     .OrderBy(t => t.Name)
-                    .Select(t => new ContractTemplateDto
+                    .ToListAsync();
+
+                Console.WriteLine($"Found {templates.Count} templates for contract type {contractTypeId}");
+
+                var result = new List<ContractTemplateDto>();
+                foreach (var template in templates)
+                {
+                    List<string> workServices;
+                    try
                     {
-                        Id = t.Id,
-                        Name = t.Name,
-                        Type = t.Type,
-                        ContractTypeId = t.ContractTypeId,
+                        workServices = JsonSerializer.Deserialize<List<string>>(template.WorkServicesJson, _jsonOptions) ?? new List<string>();
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        Console.WriteLine($"JSON deserialization error for template {template.Id}: {jsonEx.Message}");
+                        workServices = new List<string>();
+                    }
+
+                    result.Add(new ContractTemplateDto
+                    {
+                        Id = template.Id,
+                        Name = template.Name,
+                        Type = template.Type,
+                        ContractTypeId = template.ContractTypeId,
                         ContractType = new ContractTypeDto
                         {
-                            Id = t.ContractType.Id,
-                            Name = t.ContractType.Name,
-                            Code = t.ContractType.Code,
-                            Description = t.ContractType.Description,
-                            CreatedAt = t.ContractType.CreatedAt,
-                            UpdatedAt = t.ContractType.UpdatedAt
+                            Id = template.ContractType.Id,
+                            Name = template.ContractType.Name,
+                            Code = template.ContractType.Code,
+                            Description = template.ContractType.Description
                         },
-                        WorkServices = JsonSerializer.Deserialize<List<string>>(t.WorkServicesJson, _jsonOptions) ?? new List<string>(),
-                        OperationsPer8Hours = t.OperationsPer8Hours,
-                        CreatedAt = t.CreatedAt,
-                        UpdatedAt = t.UpdatedAt
-                    })
-                    .ToListAsync();
+                        WorkServices = workServices,
+                        CreatedAt = template.CreatedAt,
+                        UpdatedAt = template.UpdatedAt
+                    });
+                }
 
-                return Ok(templates);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Internal server error: {ex.Message}");
-            }
-        }
-
-        // НОВЫЙ МЕТОД: получение доступных работ/услуг по ID типа договора
-        [HttpGet("contract-type/{contractTypeId}/services")]
-        public async Task<ActionResult<IEnumerable<string>>> GetWorkServicesByContractType(int contractTypeId)
-        {
-            try
-            {
-                var templates = await _context.ContractTemplates
-                    .Where(t => t.ContractTypeId == contractTypeId)
-                    .ToListAsync();
-
-                var services = templates
-                    .SelectMany(t => JsonSerializer.Deserialize<List<string>>(t.WorkServicesJson, _jsonOptions) ?? new List<string>())
-                    .Distinct()
-                    .OrderBy(s => s)
-                    .ToList();
-
-                return Ok(services);
+                return Ok(result);
             }
             catch (Exception ex)
             {

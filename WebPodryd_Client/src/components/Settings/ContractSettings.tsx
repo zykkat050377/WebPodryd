@@ -5,11 +5,13 @@ import {
   DialogActions, TablePagination, Tooltip, Alert, Tabs, Tab, Chip,
   FormControl, InputLabel, Select, MenuItem, Autocomplete
 } from '@mui/material';
-import { Add, Edit, Delete, Search, Close } from '@mui/icons-material';
+import { Add, Edit, Delete, Search, Close, Warning, CheckCircle } from '@mui/icons-material';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { ContractTemplate, TabPanelProps, ContractType } from '../../../types/contract';
+import { useStructuralUnits } from '../../context/StructuralUnitsContext';
+import { ContractTemplate, TabPanelProps } from '../../../types/contract';
 import ContractTemplateService from '../../services/ContractTemplateService';
+import ActTemplateService, { CreateActTemplateData } from '../../services/ActTemplateService';
 import { useContractTypes } from '../../hooks/useContractTypes';
 
 function TabPanel(props: TabPanelProps) {
@@ -30,12 +32,15 @@ function TabPanel(props: TabPanelProps) {
 
 const ContractSettings = () => {
   const { user } = useAuth();
+  const { structuralUnits } = useStructuralUnits();
   const { contractTypes, loading: typesLoading } = useContractTypes();
   const [activeTab, setActiveTab] = useState(0);
   const [contractTemplates, setContractTemplates] = useState<ContractTemplate[]>([]);
+  const [actTemplatesCount, setActTemplatesCount] = useState<{[key: number]: number}>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   const [openAddModal, setOpenAddModal] = useState(false);
   const [openEditModal, setOpenEditModal] = useState(false);
@@ -44,6 +49,7 @@ const ContractSettings = () => {
   const [newTemplate, setNewTemplate] = useState({
     name: '',
     contractTypeId: 0,
+    type: '' as 'operation' | 'norm-hour' | 'cost',
     workServices: [] as string[]
   });
 
@@ -53,45 +59,8 @@ const ContractSettings = () => {
     search: ''
   });
 
-  // Моковые данные для fallback
-  const mockTemplates: ContractTemplate[] = [
-    {
-      id: 1,
-      name: 'ДП-выкладчик',
-      contractTypeId: 1,
-      workServices: ['Выкладка товара по планограмме', 'Мерчандайзинг продукции', 'Расстановка ценников', 'Контроль сроков годности', 'Поддержание чистоты на полках'],
-      operationsPer8Hours: 0,
-      createdAt: '2024-01-15',
-      updatedAt: '2024-01-15'
-    },
-    {
-      id: 2,
-      name: 'ДП-комплектовщик',
-      contractTypeId: 1,
-      workServices: ['Комплектация заказов по накладным', 'Упаковка товара', 'Проверка качества продукции', 'Маркировка готовых заказов', 'Погрузка товара в транспорт'],
-      operationsPer8Hours: 0,
-      createdAt: '2024-01-16',
-      updatedAt: '2024-01-16'
-    },
-    {
-      id: 3,
-      name: 'ДП-контролер-кассир',
-      contractTypeId: 2,
-      workServices: ['Контроль кассовых операций', 'Проверка чеков и документов', 'Инвентаризация товаров', 'Обучение новых кассиров', 'Составление отчетности по кассам'],
-      operationsPer8Hours: 8,
-      createdAt: '2024-01-17',
-      updatedAt: '2024-01-17'
-    },
-    {
-      id: 4,
-      name: 'ДП-уборщик',
-      contractTypeId: 3,
-      workServices: ['Ежедневная уборка помещений', 'Санобработка поверхностей', 'Вынос мусора и утилизация', 'Мытье окон и витрин', 'Уход за прилегающей территорией'],
-      operationsPer8Hours: 0,
-      createdAt: '2024-01-18',
-      updatedAt: '2024-01-18'
-    }
-  ];
+  // Состояние для подсветки шаблона договора после возврата из ActSettings
+  const [highlightedTemplateId, setHighlightedTemplateId] = useState<number | null>(null);
 
   // Получаем типы договоров для табов и выпадающих списков
   const templateTypes = contractTypes.map(type => ({
@@ -124,42 +93,92 @@ const ContractSettings = () => {
     return Array.from(services);
   };
 
+  // Функция для автоматического создания шаблона акта
+  const autoCreateActTemplate = async (contractTemplate: ContractTemplate) => {
+    try {
+      console.log('Автоматическое создание шаблона акта для шаблона договора:', contractTemplate);
+
+      const actTemplateData: CreateActTemplateData = {
+        name: `${contractTemplate.name} (авто)`,
+        contractTypeId: contractTemplate.contractTypeId,
+        contractTemplateId: contractTemplate.id,
+        workServices: contractTemplate.workServices.map((service: string) => ({
+          name: service,
+          cost: 0
+        })),
+        departmentId: structuralUnits[0]?.id || 0,
+        totalCost: 0
+      };
+
+      const createdActTemplate = await ActTemplateService.createActTemplate(actTemplateData);
+      console.log('Автоматически создан шаблон акта:', createdActTemplate);
+
+      return createdActTemplate;
+    } catch (error: any) {
+      console.error('Ошибка автоматического создания шаблона акта:', error);
+      throw error;
+    }
+  };
+
+  // Функция для получения количества зависимых шаблонов актов
+  const fetchActTemplatesCount = async () => {
+    try {
+      const allActTemplates = await ActTemplateService.getActTemplates();
+      const countMap: {[key: number]: number} = {};
+
+      // Для каждого шаблона договора считаем количество связанных шаблонов актов
+      contractTemplates.forEach(template => {
+        const count = allActTemplates.filter(actTemplate =>
+          actTemplate.contractTemplateId === template.id
+        ).length;
+        countMap[template.id] = count;
+      });
+
+      setActTemplatesCount(countMap);
+      console.log('Обновлено количество зависимых шаблонов актов:', countMap);
+    } catch (error) {
+      console.error('Ошибка загрузки количества шаблонов актов:', error);
+    }
+  };
+
   const fetchTemplates = async () => {
     try {
       setLoading(true);
       setError(null);
 
       if (contractTypes.length === 0) {
-        // Если типы еще не загружены, используем моковые данные
-        const currentTypeCode = ['operation', 'norm-hour', 'cost'][activeTab];
-        const currentType = contractTypes.find(t => t.code === currentTypeCode);
-        if (currentType) {
-          setContractTemplates(mockTemplates.filter(t => t.contractTypeId === currentType.id));
-        } else {
-          setContractTemplates(mockTemplates);
-        }
+        setContractTemplates([]);
         return;
       }
 
-      // Реальный API вызов
+      // Реальный API вызов - получаем шаблоны по ID типа договора
       const currentType = templateTypes[activeTab];
       if (currentType) {
-        const templates = await ContractTemplateService.getContractTemplates({
-          contractTypeId: currentType.value
-        });
+        const templates = await ContractTemplateService.getTemplatesByContractType(currentType.value);
         setContractTemplates(templates);
+
+        // ЗАГРУЖАЕМ КОЛИЧЕСТВО ЗАВИСИМЫХ ШАБЛОНОВ АКТОВ СРАЗУ ПОСЛЕ ЗАГРУЗКИ ШАБЛОНОВ
+        await fetchActTemplatesCount();
+      } else {
+        setContractTemplates([]);
       }
 
     } catch (err: any) {
       console.error('Ошибка загрузки шаблонов:', err);
       setError('Не удалось загрузить список шаблонов договоров');
-      // Fallback на моковые данные
-      const currentType = templateTypes[activeTab];
-      if (currentType) {
-        setContractTemplates(mockTemplates.filter(t => t.contractTypeId === currentType.value));
-      } else {
-        setContractTemplates(mockTemplates);
-      }
+      setContractTemplates([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Функция для принудительного обновления данных (без сообщения)
+  const refreshData = async () => {
+    try {
+      setLoading(true);
+      await fetchTemplates(); // Эта функция теперь автоматически загружает и количество зависимых шаблонов
+    } catch (err: any) {
+      console.error('Ошибка обновления данных:', err);
     } finally {
       setLoading(false);
     }
@@ -171,16 +190,53 @@ const ContractSettings = () => {
     }
   }, [activeTab, contractTypes]);
 
+  // Эффект для обработки возврата из ActSettings
+  useEffect(() => {
+    const returnedFromActSettings = sessionStorage.getItem('returnedFromActSettings');
+    const templateToHighlight = sessionStorage.getItem('templateToHighlight');
+
+    if (returnedFromActSettings && templateToHighlight) {
+      setHighlightedTemplateId(parseInt(templateToHighlight));
+      sessionStorage.removeItem('returnedFromActSettings');
+      sessionStorage.removeItem('templateToHighlight');
+
+      // Автоматически обновляем данные
+      refreshData();
+    }
+  }, []);
+
+  // Эффект для обновления количества зависимых шаблонов при изменении списка шаблонов договоров
+  useEffect(() => {
+    if (contractTemplates.length > 0) {
+      fetchActTemplatesCount();
+    }
+  }, [contractTemplates]);
+
+  // Эффект для периодического обновления данных (каждые 3 часа)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!loading) {
+        refreshData();
+      }
+    }, 10800000);
+
+    return () => clearInterval(interval);
+  }, [loading]);
+
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
     setPage(0);
+    setHighlightedTemplateId(null);
   };
 
   const handleOpenAddModal = () => {
     const currentType = templateTypes[activeTab];
+    const selectedContractType = contractTypes.find(ct => ct.id === currentType?.value);
+
     setNewTemplate({
       name: '',
-      contractTypeId: currentType?.value || 0,
+      contractTypeId: currentType?.value || contractTypes[0]?.id || 0,
+      type: (selectedContractType?.code as 'operation' | 'norm-hour' | 'cost') || 'operation',
       workServices: ['']
     });
     setOpenAddModal(true);
@@ -190,13 +246,17 @@ const ContractSettings = () => {
     setOpenAddModal(false);
     setNewTemplate({
       name: '',
-      contractTypeId: 0,
+      contractTypeId: contractTypes[0]?.id || 0,
+      type: 'operation',
       workServices: []
     });
   };
 
   const handleOpenEditModal = (template: ContractTemplate) => {
-    setSelectedTemplate({ ...template });
+    setSelectedTemplate({
+      ...template,
+      contractTypeId: template.contractTypeId || contractTypes[0]?.id || 1
+    });
     setOpenEditModal(true);
   };
 
@@ -208,25 +268,61 @@ const ContractSettings = () => {
   const handleAddTemplate = async () => {
     try {
       setError(null);
+      setCreatingTemplate(true);
+
+      // Валидация
+      if (!newTemplate.name.trim()) {
+        setError('Введите название шаблона');
+        setCreatingTemplate(false);
+        return;
+      }
+
+      const validWorkServices = newTemplate.workServices.filter(service => service.trim() !== '');
+      if (validWorkServices.length === 0) {
+        setError('Добавьте хотя бы одну работу/услугу');
+        setCreatingTemplate(false);
+        return;
+      }
+
+      if (!newTemplate.contractTypeId || newTemplate.contractTypeId === 0) {
+        setError('Выберите тип договора');
+        setCreatingTemplate(false);
+        return;
+      }
 
       const templateData = {
-        name: newTemplate.name,
+        name: newTemplate.name.trim(),
+        type: newTemplate.type,
         contractTypeId: newTemplate.contractTypeId,
-        workServices: newTemplate.workServices.filter(service => service.trim() !== ''),
-        operationsPer8Hours: 0
+        workServices: validWorkServices
       };
 
-      // Реальный API вызов
+      // Реальный API вызов - создаем шаблон договора
       const newTemplateData = await ContractTemplateService.createContractTemplate(templateData);
 
+      // Автоматически создаем шаблон акта
+      try {
+        await autoCreateActTemplate(newTemplateData);
+        console.log('Шаблон акта автоматически создан');
+
+        setSuccess('Шаблон договора и шаблон акта успешно созданы');
+      } catch (actError: any) {
+        console.error('Ошибка создания шаблона акта, но шаблон договора создан:', actError);
+        setSuccess('Шаблон договора создан, но произошла ошибка при создании шаблона акта');
+      }
+
       setContractTemplates(prev => [...prev, newTemplateData]);
-      setSuccess('Шаблон договора успешно добавлен');
       handleCloseAddModal();
 
-      setTimeout(() => setSuccess(null), 3000);
+      // ОБНОВЛЯЕМ ДАННЫЕ СРАЗУ ПОСЛЕ СОЗДАНИЯ
+      await refreshData();
+
+      setTimeout(() => setSuccess(null), 5000);
     } catch (err: any) {
       console.error('Ошибка добавления:', err);
-      setError(err.response?.data?.message || 'Ошибка при добавлении шаблона договора');
+      setError(err.response?.data?.message || err.message || 'Ошибка при добавлении шаблона договора');
+    } finally {
+      setCreatingTemplate(false);
     }
   };
 
@@ -236,29 +332,43 @@ const ContractSettings = () => {
     try {
       setError(null);
 
-      // Реальный API вызов
-      await ContractTemplateService.updateContractTemplate(selectedTemplate.id, {
-        name: selectedTemplate.name,
-        contractTypeId: selectedTemplate.contractTypeId,
-        workServices: selectedTemplate.workServices.filter(service => service.trim() !== ''),
-        operationsPer8Hours: selectedTemplate.operationsPer8Hours
-      });
+      // Валидация
+      if (!selectedTemplate.name.trim()) {
+        setError('Введите название шаблона');
+        return;
+      }
 
-      setContractTemplates(prev =>
-        prev.map(template =>
-          template.id === selectedTemplate.id
-            ? { ...selectedTemplate, updatedAt: new Date().toISOString() }
-            : template
-        )
-      );
+      const validWorkServices = selectedTemplate.workServices.filter(service => service.trim() !== '');
+      if (validWorkServices.length === 0) {
+        setError('Добавьте хотя бы одну работу/услугу');
+        return;
+      }
+
+      if (!selectedTemplate.contractTypeId || selectedTemplate.contractTypeId === 0) {
+        setError('Выберите тип договора');
+        return;
+      }
+
+      const updateData = {
+        name: selectedTemplate.name.trim(),
+        type: selectedTemplate.type,
+        contractTypeId: selectedTemplate.contractTypeId,
+        workServices: validWorkServices
+      };
+
+      // Реальный API вызов
+      await ContractTemplateService.updateContractTemplate(selectedTemplate.id, updateData);
 
       setSuccess('Шаблон договора успешно обновлен');
       handleCloseEditModal();
 
+      // ОБНОВЛЯЕМ ДАННЫЕ СРАЗУ ПОСЛЕ РЕДАКТИРОВАНИЯ
+      await refreshData();
+
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Ошибка обновления:', err);
-      setError(err.response?.data?.message || 'Ошибка при обновлении шаблона договора');
+      setError(err.response?.data?.message || err.message || 'Ошибка при обновлении шаблона договора');
     }
   };
 
@@ -269,18 +379,95 @@ const ContractSettings = () => {
 
     try {
       setError(null);
-
-      // Реальный API вызов
       await ContractTemplateService.deleteContractTemplate(id);
 
-      setContractTemplates(prev => prev.filter(template => template.id !== id));
       setSuccess('Шаблон договора успешно удален');
+
+      // ОБНОВЛЯЕМ ДАННЫЕ СРАЗУ ПОСЛЕ УДАЛЕНИЯ
+      await refreshData();
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Ошибка удаления:', err);
-      setError(err.response?.data?.message || 'Ошибка при удалении шаблона договора');
+
+      // Детальная обработка ошибок с кнопкой перехода
+      if (err.response?.data?.details) {
+        const errorMessage = `${err.response.data.message}: ${err.response.data.details}`;
+
+        // Проверяем, содержит ли ошибка информацию о зависимых шаблонах актов
+        if (err.response.data.message?.includes('зависимых шаблонов актов') ||
+            err.response.data.details?.includes('зависимых шаблонов актов') ||
+            err.response.data.message?.includes('dependent act templates')) {
+
+          // Создаем кнопку для перехода к удалению зависимых шаблонов
+          setError(
+            <Box>
+              <Typography variant="body1" gutterBottom>
+                {errorMessage}
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                onClick={() => navigateToActTemplates(id)}
+                sx={{ mt: 1 }}
+                startIcon={<Delete />}
+              >
+                Перейти к удалению зависимых шаблонов актов
+              </Button>
+            </Box>
+          );
+        } else {
+          setError(errorMessage);
+        }
+      } else if (err.response?.data?.message) {
+        const errorMessage = err.response.data.message;
+
+        // Проверяем стандартное сообщение об ошибке
+        if (errorMessage.includes('зависимых шаблонов актов') ||
+            errorMessage.includes('dependent act templates')) {
+
+          setError(
+            <Box>
+              <Typography variant="body1" gutterBottom>
+                {errorMessage}
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                onClick={() => navigateToActTemplates(id)}
+                sx={{ mt: 1 }}
+                startIcon={<Delete />}
+              >
+                Перейти к удалению зависимых шаблонов актов
+              </Button>
+            </Box>
+          );
+        } else {
+          setError(errorMessage);
+        }
+      } else {
+        setError(err.message || 'Ошибка при удалении шаблона договора');
+      }
     }
+  };
+
+  // Функция для перехода к настройкам актов с фильтрацией по шаблону договора
+  const navigateToActTemplates = (contractTemplateId: number) => {
+    // Сохраняем ID шаблона договора в sessionStorage для использования в ActSettings
+    sessionStorage.setItem('selectedContractTemplateId', contractTemplateId.toString());
+    sessionStorage.setItem('redirectFromContractSettings', 'true');
+
+    // Переход к настройкам актов
+    window.location.href = '/act-settings';
+
+    console.log('Переход к настройкам актов для шаблона договора ID:', contractTemplateId);
+  };
+
+  // Функция для сброса подсветки
+  const handleClearHighlight = () => {
+    setHighlightedTemplateId(null);
   };
 
   const handleWorkServiceChange = (index: number, value: string, isNew: boolean = false) => {
@@ -316,6 +503,25 @@ const ContractSettings = () => {
     } else if (selectedTemplate) {
       const newWorkServices = selectedTemplate.workServices.filter((_, i) => i !== index);
       setSelectedTemplate(prev => prev ? { ...prev, workServices: newWorkServices } : null);
+    }
+  };
+
+  const handleContractTypeChange = (contractTypeId: number, isNew: boolean = false) => {
+    const contractType = contractTypes.find(ct => ct.id === contractTypeId);
+    if (contractType) {
+      if (isNew) {
+        setNewTemplate(prev => ({
+          ...prev,
+          contractTypeId,
+          type: contractType.code as 'operation' | 'norm-hour' | 'cost'
+        }));
+      } else if (selectedTemplate) {
+        setSelectedTemplate(prev => prev ? {
+          ...prev,
+          contractTypeId,
+          type: contractType.code as 'operation' | 'norm-hour' | 'cost'
+        } : null);
+      }
     }
   };
 
@@ -437,6 +643,26 @@ const ContractSettings = () => {
         </Alert>
       )}
 
+      {/* Баннер подсветки после возврата из ActSettings */}
+      {highlightedTemplateId && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={handleClearHighlight}>
+              Сбросить
+            </Button>
+          }
+        >
+          <Typography variant="body1">
+            Все зависимые шаблоны актов удалены. Теперь можно удалить шаблон договора.
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.5 }}>
+            Подсвеченный шаблон готов к удалению.
+          </Typography>
+        </Alert>
+      )}
+
       <TabPanel value={activeTab} index={activeTab}>
         <Paper elevation={3} sx={{ p: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -475,62 +701,125 @@ const ContractSettings = () => {
                 <TableCell>Тип договора</TableCell>
                 <TableCell>Название договора</TableCell>
                 <TableCell>Работы/услуги</TableCell>
+                <TableCell align="center">Зависимые шаблоны актов</TableCell>
                 <TableCell align="right">Действия</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} align="center">
+                  <TableCell colSpan={5} align="center">
                     Загрузка...
                   </TableCell>
                 </TableRow>
               ) : templatesToShow.length > 0 ? (
-                templatesToShow.map((template) => (
-                  <TableRow key={template.id} hover>
-                    <TableCell>
-                      <Chip
-                        label={getTypeLabel(template.contractTypeId)}
-                        color={getTypeColor(template.contractTypeId) as any}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="subtitle2" fontWeight="bold">
-                        {template.name}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ maxWidth: 300 }}>
-                        {template.workServices.slice(0, 3).map((service, index) => (
-                          <Typography key={index} variant="body2">
-                            • {service}
+                templatesToShow.map((template) => {
+                  const dependentCount = actTemplatesCount[template.id] || 0;
+                  const isHighlighted = highlightedTemplateId === template.id;
+                  const hasNoActTemplates = dependentCount === 0;
+
+                  return (
+                    <TableRow
+                      key={template.id}
+                      hover
+                      sx={{
+                        backgroundColor: isHighlighted
+                          ? 'rgba(25, 118, 210, 0.08)'
+                          : hasNoActTemplates
+                            ? 'rgba(255, 109, 102, 0.1)'
+                            : 'inherit',
+                        border: isHighlighted ? '2px solid #1976d2' : '1px solid rgba(224, 224, 224, 1)',
+                        '&:hover': {
+                          backgroundColor: isHighlighted
+                            ? 'rgba(25, 118, 210, 0.12)'
+                            : hasNoActTemplates
+                              ? 'rgba(255, 109, 102, 0.15)'
+                              : 'rgba(0, 0, 0, 0.04)',
+                        },
+                      }}
+                    >
+                      <TableCell>
+                        <Chip
+                          label={getTypeLabel(template.contractTypeId)}
+                          color={getTypeColor(template.contractTypeId) as any}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="subtitle2" fontWeight="bold">
+                            {template.name}
                           </Typography>
-                        ))}
-                        {template.workServices.length > 3 && (
-                          <Typography variant="body2" color="text.secondary">
-                            • и еще {template.workServices.length - 3}...
-                          </Typography>
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title="Редактировать">
-                        <IconButton onClick={() => handleOpenEditModal(template)}>
-                          <Edit color="primary" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Удалить">
-                        <IconButton onClick={() => handleDeleteTemplate(template.id)}>
-                          <Delete color="error" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))
+                          {isHighlighted && (
+                            <Tooltip title="Готов к удалению">
+                              <CheckCircle color="success" fontSize="small" />
+                            </Tooltip>
+                          )}
+                          {hasNoActTemplates && !isHighlighted && (
+                            <Tooltip title="Нет созданных шаблонов актов">
+                              <Warning color="warning" fontSize="small" />
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ maxWidth: 400 }}>
+                          {template.workServices.slice(0, 3).map((service, index) => (
+                            <Typography key={index} variant="body2">
+                              • {service}
+                            </Typography>
+                          ))}
+                          {template.workServices.length > 3 && (
+                            <Typography variant="body2" color="text.secondary">
+                              • и еще {template.workServices.length - 3}...
+                            </Typography>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                          <Chip
+                            label={dependentCount}
+                            color={
+                              dependentCount === 0
+                                ? 'default'
+                                : dependentCount > 0
+                                  ? 'primary'
+                                  : 'default'
+                            }
+                            variant={dependentCount === 0 ? "outlined" : "filled"}
+                            size="small"
+                          />
+                          {dependentCount === 0 && (
+                            <Tooltip title="Нет созданных шаблонов актов">
+                              <Warning color="warning" fontSize="small" />
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Редактировать">
+                          <IconButton onClick={() => handleOpenEditModal(template)}>
+                            <Edit color="primary" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Удалить">
+                          <IconButton
+                            onClick={() => handleDeleteTemplate(template.id)}
+                            sx={{
+                              color: isHighlighted ? '#1976d2' : 'error.main',
+                            }}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} align="center">
+                  <TableCell colSpan={5} align="center">
                     {contractTemplates.length === 0 ? 'Нет данных о шаблонах' : 'Ничего не найдено'}
                   </TableCell>
                 </TableRow>
@@ -572,23 +861,20 @@ const ContractSettings = () => {
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <FormControl fullWidth>
+              <FormControl fullWidth required>
                 <InputLabel>Тип договора</InputLabel>
                 <Select
                   label="Тип договора"
-                  value={newTemplate.contractTypeId}
+                  value={newTemplate.contractTypeId || contractTypes[0]?.id || ''}
                   onChange={(e) => {
                     const contractTypeId = parseInt(e.target.value as string);
-                    setNewTemplate(prev => ({
-                      ...prev,
-                      contractTypeId,
-                      workServices: ['']
-                    }));
+                    handleContractTypeChange(contractTypeId, true);
                   }}
+                  disabled={creatingTemplate}
                 >
                   {contractTypes.map((type) => (
                     <MenuItem key={type.id} value={type.id}>
-                      {type.name}
+                      {type.name} ({type.code})
                     </MenuItem>
                   ))}
                 </Select>
@@ -602,6 +888,8 @@ const ContractSettings = () => {
                 onChange={(e) => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
                 required
                 placeholder="Например: ДП-выкладчик"
+                helperText="Можно создавать несколько шаблонов с одинаковыми названиями для одного типа договора"
+                disabled={creatingTemplate}
               />
             </Grid>
 
@@ -625,6 +913,7 @@ const ContractSettings = () => {
                       onInputChange={(event, newValue) => {
                         handleWorkServiceChange(index, newValue, true);
                       }}
+                      disabled={creatingTemplate}
                       renderInput={(params) => (
                         <TextField
                           {...params}
@@ -640,7 +929,7 @@ const ContractSettings = () => {
                     <IconButton
                       onClick={() => handleRemoveWorkService(index, true)}
                       color="error"
-                      disabled={newTemplate.workServices.length <= 1}
+                      disabled={newTemplate.workServices.length <= 1 || creatingTemplate}
                     >
                       <Delete />
                     </IconButton>
@@ -653,20 +942,31 @@ const ContractSettings = () => {
                 startIcon={<Add />}
                 onClick={() => handleAddWorkService(true)}
                 sx={{ mt: 1 }}
+                disabled={creatingTemplate}
               >
                 ДОБАВИТЬ РАБОТЫ/УСЛУГИ
               </Button>
             </Grid>
+
+            <Grid size={{ xs: 12 }}>
+              <Alert severity="info">
+                При создании шаблона договора автоматически будет создан соответствующий шаблон акта с нулевой стоимостью.
+              </Alert>
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseAddModal}>Отмена</Button>
+          <Button onClick={handleCloseAddModal} disabled={creatingTemplate}>
+            Отмена
+          </Button>
           <Button
             variant="contained"
             onClick={handleAddTemplate}
-            disabled={!newTemplate.name || newTemplate.workServices.filter(service => service.trim() !== '').length === 0 || newTemplate.contractTypeId === 0}
+            disabled={creatingTemplate || !newTemplate.name.trim() ||
+                     newTemplate.workServices.filter(service => service.trim() !== '').length === 0 ||
+                     !newTemplate.contractTypeId || newTemplate.contractTypeId === 0}
           >
-            Добавить шаблон
+            {creatingTemplate ? 'Создание...' : 'Добавить шаблон'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -692,22 +992,19 @@ const ContractSettings = () => {
           {selectedTemplate && (
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <FormControl fullWidth>
+                <FormControl fullWidth required>
                   <InputLabel>Тип договора</InputLabel>
                   <Select
                     label="Тип договора"
-                    value={selectedTemplate.contractTypeId}
+                    value={selectedTemplate.contractTypeId || contractTypes[0]?.id || ''}
                     onChange={(e) => {
                       const contractTypeId = parseInt(e.target.value as string);
-                      setSelectedTemplate(prev => prev ? {
-                        ...prev,
-                        contractTypeId
-                      } : null);
+                      handleContractTypeChange(contractTypeId, false);
                     }}
                   >
                     {contractTypes.map((type) => (
                       <MenuItem key={type.id} value={type.id}>
-                        {type.name}
+                        {type.name} ({type.code})
                       </MenuItem>
                     ))}
                   </Select>
@@ -720,6 +1017,7 @@ const ContractSettings = () => {
                   value={selectedTemplate.name}
                   onChange={(e) => setSelectedTemplate(prev => prev ? { ...prev, name: e.target.value } : null)}
                   required
+                  helperText="Можно создавать несколько шаблонов с одинаковыми названиями для одного типа договора"
                 />
               </Grid>
 
@@ -783,7 +1081,9 @@ const ContractSettings = () => {
           <Button
             variant="contained"
             onClick={handleEditTemplate}
-            disabled={!selectedTemplate?.name || selectedTemplate.workServices.filter(service => service.trim() !== '').length === 0}
+            disabled={!selectedTemplate?.name.trim() ||
+                     selectedTemplate.workServices.filter(service => service.trim() !== '').length === 0 ||
+                     !selectedTemplate.contractTypeId || selectedTemplate.contractTypeId === 0}
           >
             Сохранить изменения
           </Button>

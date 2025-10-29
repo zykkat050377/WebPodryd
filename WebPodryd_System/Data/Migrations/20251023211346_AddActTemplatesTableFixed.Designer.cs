@@ -3,15 +3,17 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using WebPodryd_System.Data;
 
 namespace WebPodryd_System.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251023211346_AddActTemplatesTableFixed")]
+    partial class AddActTemplatesTableFixed
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -292,18 +294,13 @@ namespace WebPodryd_System.Data.Migrations
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("DepartmentId")
+                    b.Property<int>("DepartmentId")
                         .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -371,28 +368,28 @@ namespace WebPodryd_System.Data.Migrations
                         {
                             Id = 1,
                             Code = "operation",
-                            CreatedAt = new DateTime(2025, 10, 24, 6, 54, 27, 868, DateTimeKind.Utc).AddTicks(4078),
+                            CreatedAt = new DateTime(2025, 10, 23, 21, 13, 46, 652, DateTimeKind.Utc).AddTicks(4575),
                             Description = "Оплата за каждую выполненную операцию",
                             Name = "За операцию",
-                            UpdatedAt = new DateTime(2025, 10, 24, 6, 54, 27, 868, DateTimeKind.Utc).AddTicks(4196)
+                            UpdatedAt = new DateTime(2025, 10, 23, 21, 13, 46, 652, DateTimeKind.Utc).AddTicks(4690)
                         },
                         new
                         {
                             Id = 2,
                             Code = "norm-hour",
-                            CreatedAt = new DateTime(2025, 10, 24, 6, 54, 27, 868, DateTimeKind.Utc).AddTicks(4294),
+                            CreatedAt = new DateTime(2025, 10, 23, 21, 13, 46, 652, DateTimeKind.Utc).AddTicks(4780),
                             Description = "Оплата по нормо-часам работы",
                             Name = "Нормо-часа",
-                            UpdatedAt = new DateTime(2025, 10, 24, 6, 54, 27, 868, DateTimeKind.Utc).AddTicks(4295)
+                            UpdatedAt = new DateTime(2025, 10, 23, 21, 13, 46, 652, DateTimeKind.Utc).AddTicks(4780)
                         },
                         new
                         {
                             Id = 3,
                             Code = "cost",
-                            CreatedAt = new DateTime(2025, 10, 24, 6, 54, 27, 868, DateTimeKind.Utc).AddTicks(4297),
+                            CreatedAt = new DateTime(2025, 10, 23, 21, 13, 46, 652, DateTimeKind.Utc).AddTicks(4783),
                             Description = "Фиксированная стоимость работ/услуг",
                             Name = "Стоимость",
-                            UpdatedAt = new DateTime(2025, 10, 24, 6, 54, 27, 868, DateTimeKind.Utc).AddTicks(4298)
+                            UpdatedAt = new DateTime(2025, 10, 23, 21, 13, 46, 652, DateTimeKind.Utc).AddTicks(4784)
                         });
                 });
 
@@ -727,7 +724,8 @@ namespace WebPodryd_System.Data.Migrations
                     b.HasOne("WebPodryd_System.Models.Department", "Department")
                         .WithMany()
                         .HasForeignKey("DepartmentId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("ContractType");
 
